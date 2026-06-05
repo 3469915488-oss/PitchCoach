@@ -19,6 +19,7 @@ PitchCoach is an Android MVP for musicians who want fast, readable pitch feedbac
 - **Chromatic pitch coach**: live note, octave, cents offset, stability, volume, and a fixed +/-10 cents in-tune zone.
 - **Precision-first pitch engine**: rolling analysis windows with hybrid YIN + MPM detection, octave-aware filtering, and conservative disagreement handling.
 - **Guitar tuner mode**: lock to a specific string instead of auto-jumping, choose common tunings, and play a reference tone for the selected string.
+- **Guitar reference tone**: uses a real acoustic guitar recording as the sound source instead of a plain sine wave.
 - **Practice files**: save each take as local `.pitchcoach.csv` analysis data plus a `.wav` recording.
 - **Replay and review**: listen back to saved recordings and compare them with summary metrics.
 - **Local by design**: no account, no AI upload, no subscription, and no server dependency in the current MVP.
@@ -86,3 +87,5 @@ PitchCoach is an MVP. The core pitch, guitar, recording, replay, and local histo
 ## License
 
 MIT License. See [LICENSE](LICENSE).
+
+Third-party audio notices are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

@@ -3,16 +3,14 @@ package com.pitchcoach.features.pitchmeter
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
-import android.media.AudioAttributes
-import android.media.AudioFormat
 import android.media.MediaPlayer
-import android.media.AudioTrack
 import androidx.annotation.RequiresPermission
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.pitchcoach.R
 import com.pitchcoach.core.audio.AudioRecordAudioRecorder
 import com.pitchcoach.core.audio.AudioRecorder
 import com.pitchcoach.core.music.GuitarTunings
@@ -28,8 +26,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -40,13 +36,12 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
-import kotlin.math.PI
-import kotlin.math.sin
 
 class PitchMeterViewModel(
     private val audioRecorder: AudioRecorder,
     private val analyzer: PitchAnalyzer,
     private val repository: PracticeSessionRepository? = null,
+    private val guitarReferenceTonePlayer: GuitarReferenceTonePlayer,
 ) : ViewModel() {
     private val displayStabilizer = PitchDisplayStabilizer()
     private val pendingFrames = mutableListOf<PitchFrameSnapshot>()
@@ -183,7 +178,7 @@ class PitchMeterViewModel(
 
         val frequency = selectedGuitarTarget().frequencyHz
         referenceToneJob = viewModelScope.launch(Dispatchers.Default) {
-            playReferenceTone(frequency)
+            guitarReferenceTonePlayer.play(frequency)
         }
         _uiState.value = _uiState.value.copy(isReferenceTonePlaying = true)
     }
@@ -431,51 +426,6 @@ class PitchMeterViewModel(
         referenceToneJob = null
     }
 
-    private suspend fun playReferenceTone(frequencyHz: Float) {
-        val minBufferSize = AudioTrack.getMinBufferSize(
-            REFERENCE_SAMPLE_RATE,
-            AudioFormat.CHANNEL_OUT_MONO,
-            AudioFormat.ENCODING_PCM_16BIT,
-        )
-        val bufferSize = maxOf(minBufferSize, REFERENCE_BUFFER_SAMPLES * 2)
-        val track = AudioTrack.Builder()
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                    .build(),
-            )
-            .setAudioFormat(
-                AudioFormat.Builder()
-                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                    .setSampleRate(REFERENCE_SAMPLE_RATE)
-                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                    .build(),
-            )
-            .setBufferSizeInBytes(bufferSize)
-            .setTransferMode(AudioTrack.MODE_STREAM)
-            .build()
-
-        val buffer = ShortArray(REFERENCE_BUFFER_SAMPLES)
-        var phase = 0.0
-        val phaseStep = 2.0 * PI * frequencyHz / REFERENCE_SAMPLE_RATE
-        try {
-            track.play()
-            while (currentCoroutineContext().isActive) {
-                for (index in buffer.indices) {
-                    val envelope = 0.28
-                    buffer[index] = (sin(phase) * envelope * Short.MAX_VALUE).toInt().toShort()
-                    phase += phaseStep
-                    if (phase > 2.0 * PI) phase -= 2.0 * PI
-                }
-                track.write(buffer, 0, buffer.size)
-            }
-        } finally {
-            runCatching { track.stop() }
-            track.release()
-        }
-    }
-
     private suspend fun appendAnalysisFrameBuffered(sessionId: String, state: PitchAnalysisState) {
         pendingFrames.add(state.toSnapshot())
 
@@ -517,17 +467,22 @@ class PitchMeterViewModel(
         private const val FRAME_BATCH_SIZE = 24
         private const val FRAME_FLUSH_INTERVAL_MS = 1_000L
         private const val IN_TUNE_RANGE_CENTS = 10f
-        private const val REFERENCE_SAMPLE_RATE = 44_100
-        private const val REFERENCE_BUFFER_SAMPLES = 1_024
 
         @SuppressLint("MissingPermission")
         fun factory(context: Context): ViewModelProvider.Factory = viewModelFactory {
             initializer {
-                val sessionDir = File(context.applicationContext.filesDir, "practice-sessions")
+                val appContext = context.applicationContext
+                val sessionDir = File(appContext.filesDir, "practice-sessions")
                 PitchMeterViewModel(
                     audioRecorder = AudioRecordAudioRecorder(),
                     analyzer = PitchAnalyzer(),
                     repository = FilePracticeSessionRepository(sessionDir),
+                    guitarReferenceTonePlayer = GuitarReferenceTonePlayer(
+                        sample = GuitarReferenceSample.fromRawResource(
+                            context = appContext,
+                            resourceId = R.raw.acoustic_guitar_gc,
+                        ),
+                    ),
                 )
             }
         }

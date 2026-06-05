@@ -1,6 +1,7 @@
 package com.pitchcoach.features.pitchmeter
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -48,7 +50,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -282,58 +286,45 @@ private fun GuitarTunerPanel(
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         ListeningStatusChip(isListening = uiState.isListening, isPaused = uiState.isPaused)
-        Text(
-            text = "第 ${uiState.selectedGuitarStringNumber} 弦",
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Text(
-            text = uiState.selectedGuitarStringLabel,
-            style = MaterialTheme.typography.displayLarge,
-            color = MaterialTheme.colorScheme.onBackground,
-            maxLines = 1,
-            textAlign = TextAlign.Center,
-        )
-        Text(
-            text = uiState.selectedGuitarStringFrequencyText,
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-        )
-        Text(
-            text = if (hasAudioPermission) uiState.directionText else "需要麦克风权限",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-        )
-        PitchGauge(
-            cents = uiState.centsValue,
-            trail = uiState.centsTrail,
-            inTuneRangeCents = uiState.inTuneRangeCents,
-        )
-        FilledTonalButton(
-            onClick = onToggleReferenceTone,
-            shape = CircleShape,
-            contentPadding = PaddingValues(horizontal = 18.dp, vertical = 12.dp),
-        ) {
-            Icon(
-                imageVector = if (uiState.isReferenceTonePlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                contentDescription = null,
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(text = if (uiState.isReferenceTonePlaying) "停止标准音" else "播放标准音")
-        }
-        GuitarStringStrip(
+        GuitarStringBoard(
             strings = uiState.guitarStrings,
             onSelected = onGuitarStringSelected,
         )
-        MeterControls(
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                text = uiState.selectedGuitarStringLabel,
+                style = MaterialTheme.typography.displayLarge,
+                color = MaterialTheme.colorScheme.onBackground,
+                maxLines = 1,
+                textAlign = TextAlign.Center,
+            )
+            Text(
+                text = "${uiState.selectedGuitarStringFrequencyText} · ${uiState.centsText}",
+                style = MaterialTheme.typography.titleMedium,
+                color = if ((uiState.centsValue?.let { kotlin.math.abs(it) } ?: Float.MAX_VALUE) <= uiState.inTuneRangeCents) {
+                    MaterialTheme.colorScheme.secondary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                maxLines = 1,
+                textAlign = TextAlign.Center,
+            )
+            Text(
+                text = if (hasAudioPermission) uiState.directionText else "需要麦克风权限",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+        }
+        GuitarActionRow(
+            isReferenceTonePlaying = uiState.isReferenceTonePlaying,
             isListening = uiState.isListening,
             isPaused = uiState.isPaused,
             hasAudioPermission = hasAudioPermission,
             onStart = onStart,
             onPauseToggle = onPauseToggle,
             onSave = onSave,
+            onToggleReferenceTone = onToggleReferenceTone,
         )
     }
 }
@@ -399,53 +390,92 @@ private fun GuitarTuningControls(
     selectedId: String,
     onSelected: (String) -> Unit,
 ) {
-    Row(
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
             .horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(9.dp),
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
     ) {
-        options.forEach { option ->
-            val selected = option.id == selectedId
-            Button(
-                onClick = { onSelected(option.id) },
-                shape = CircleShape,
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (selected) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                    },
-                    contentColor = if (selected) {
-                        MaterialTheme.colorScheme.onPrimary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                ),
-                elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp, pressedElevation = 0.dp),
-            ) {
-                Text(text = option.shortName, style = MaterialTheme.typography.labelLarge)
+        Row(
+            modifier = Modifier.padding(5.dp),
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+            options.forEach { option ->
+                val selected = option.id == selectedId
+                Button(
+                    onClick = { onSelected(option.id) },
+                    shape = CircleShape,
+                    contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (selected) {
+                            MaterialTheme.colorScheme.onBackground
+                        } else {
+                            Color.Transparent
+                        },
+                        contentColor = if (selected) {
+                            MaterialTheme.colorScheme.background
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    ),
+                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp, pressedElevation = 0.dp),
+                ) {
+                    Text(text = option.shortName, style = MaterialTheme.typography.labelLarge)
+                }
             }
         }
     }
 }
 
 @Composable
-private fun GuitarStringStrip(
+private fun GuitarStringBoard(
     strings: List<GuitarStringUiState>,
     onSelected: (Int) -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.14f))
+    val selectedGold = Color(0xFFF0B23D)
+    val boardColor = Color(0xFF111111)
+    val stringColor = Color(0xFF746C61)
+    val inactiveDot = Color.White
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(1.28f)
+            .clip(MaterialTheme.shapes.large),
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            drawRoundRect(
+                color = boardColor,
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(28.dp.toPx(), 28.dp.toPx()),
+            )
+            val top = 28.dp.toPx()
+            val bottom = size.height - 28.dp.toPx()
+            val left = 38.dp.toPx()
+            val right = size.width - 38.dp.toPx()
+            val spacing = (right - left) / 5f
+            repeat(6) { index ->
+                val x = left + spacing * index
+                drawLine(
+                    color = stringColor,
+                    start = Offset(x, top),
+                    end = Offset(x, bottom),
+                    strokeWidth = 3.dp.toPx(),
+                    cap = StrokeCap.Round,
+                )
+            }
+        }
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 32.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             strings.forEach { string ->
                 GuitarStringIndicator(
                     string = string,
+                    selectedGold = selectedGold,
+                    inactiveDot = inactiveDot,
                     onClick = { onSelected(string.number) },
                 )
             }
@@ -456,46 +486,92 @@ private fun GuitarStringStrip(
 @Composable
 private fun GuitarStringIndicator(
     string: GuitarStringUiState,
+    selectedGold: Color,
+    inactiveDot: Color,
     onClick: () -> Unit,
 ) {
-    val activeColor = when {
-        string.cents == null -> MaterialTheme.colorScheme.onSurfaceVariant
-        kotlin.math.abs(string.cents) <= 10f -> MaterialTheme.colorScheme.secondary
-        string.cents < 0f -> MaterialTheme.colorScheme.tertiary
-        else -> MaterialTheme.colorScheme.primary
-    }
-    val contentColor = if (string.isSelected) activeColor else MaterialTheme.colorScheme.onSurfaceVariant
+    val dotColor = if (string.isSelected) selectedGold else inactiveDot
+    val contentColor = if (string.isSelected) Color(0xFF111111) else Color(0xFF111111)
 
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.size(if (string.isSelected) 50.dp else 34.dp),
+        shape = CircleShape,
+        color = dotColor,
     ) {
-        Text(
-            text = string.number.toString(),
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Surface(
-            onClick = onClick,
-            modifier = Modifier
-                .size(if (string.isSelected) 44.dp else 36.dp),
-            shape = CircleShape,
-            color = if (string.isSelected) {
-                activeColor.copy(alpha = 0.18f)
-            } else {
-                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f)
-            },
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center,
         ) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center,
+            Text(
+                text = string.noteLabel.takeWhile { char -> !char.isDigit() },
+                style = if (string.isSelected) MaterialTheme.typography.titleMedium else MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.ExtraBold,
+                color = contentColor,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+@Composable
+private fun GuitarActionRow(
+    isReferenceTonePlaying: Boolean,
+    isListening: Boolean,
+    isPaused: Boolean,
+    hasAudioPermission: Boolean,
+    onStart: () -> Unit,
+    onPauseToggle: () -> Unit,
+    onSave: () -> Unit,
+    onToggleReferenceTone: () -> Unit,
+) {
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Button(
+            onClick = onToggleReferenceTone,
+            shape = CircleShape,
+            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 13.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.onBackground,
+                contentColor = MaterialTheme.colorScheme.background,
+            ),
+            elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp, pressedElevation = 0.dp),
+        ) {
+            Icon(
+                imageVector = if (isReferenceTonePlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                contentDescription = null,
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(text = if (isReferenceTonePlaying) "停止" else "吉他标准音")
+        }
+        FilledTonalButton(
+            onClick = if (!isListening) onStart else onPauseToggle,
+            shape = CircleShape,
+            contentPadding = PaddingValues(horizontal = 18.dp, vertical = 13.dp),
+        ) {
+            Icon(
+                imageVector = when {
+                    !isListening -> Icons.Rounded.Mic
+                    isPaused -> Icons.Rounded.PlayArrow
+                    else -> Icons.Rounded.Pause
+                },
+                contentDescription = null,
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = when {
+                    !isListening -> if (hasAudioPermission) "听音" else "授权"
+                    isPaused -> "继续"
+                    else -> "暂停"
+                },
+            )
+        }
+        if (isListening) {
+            FilledTonalButton(
+                onClick = onSave,
+                shape = CircleShape,
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 13.dp),
             ) {
-                Text(
-                    text = string.noteLabel,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = contentColor,
-                    maxLines = 1,
-                )
+                Icon(Icons.Rounded.Save, contentDescription = null)
             }
         }
     }
